@@ -1,0 +1,65 @@
+<launch>
+
+    <arg name="markerId_1"        default="371"/>
+    <arg name="markerSize_1"      default="2.4"/>    <!-- in m -->
+    <arg name="marker_frame_1"    default="aruco_marker_frame_1"/>
+    <arg name="Dictionary_type_1"    default="TAG36h11"/>
+
+     <arg name="markerId_2"        default="160"/>
+    <arg name="markerSize_2"      default="0.5"/>    <!-- in m -->
+    <arg name="marker_frame_2"    default="aruco_marker_frame_2"/>
+    <arg name="Dictionary_type_2"    default="ARUCO_MIP_36h12"/>
+
+     <arg name="markerId_3"        default="5"/>
+    <arg name="markerSize_3"      default="0.08"/>    <!-- in m -->
+    <arg name="marker_frame_3"    default="aruco_marker_frame_2"/>
+    <arg name="Dictionary_type_3"    default="TAG16h5"/>
+
+    <arg name="ref_frame"       default=""/>  <!-- leave empty and the pose will be published wrt param parent_name -->
+    <arg name="corner_refinement" default="LINES" /> <!-- NONE, HARRIS, LINES, SUBPIX -->
+    <arg name="cam_param_path" default="/home/sh-laptop/catkin_ws/src/marker_detector/launch/camer_intinsics.yaml" />
+
+    <node pkg="aruco_ros" type="single" name="cam2_detector1">
+        <remap from="/camera_info" to="/camera_wide_angle/camera_info" />
+        <remap from="/image" to="/camera_wide_angle/image_raw" />
+        <param name="image_is_rectified" value="True"/>
+        <param name="marker_size"        value="$(arg markerSize_1)"/>
+        <param name="marker_id"          value="$(arg markerId_1)"/>
+        <param name="reference_frame"    value="$(arg ref_frame)"/>   <!-- frame in which the marker pose will be refered -->
+        <param name="camera_frame"       value="camera1"/>
+        <param name="marker_frame"       value="$(arg marker_frame_1)" />
+        <param name="corner_refinement"  value="$(arg corner_refinement)" />
+        <param name="cam_param_path" value="$(arg cam_param_path)"/>
+        <param name="Dictionary_type" value="$(arg Dictionary_type_1)"/>
+    </node>
+
+    <node pkg="aruco_ros" type="single" name="cam2_detector2">
+       <remap from="/camera_info" to="/camera_wide_angle/camera_info" />
+        <remap from="/image" to="/camera_wide_angle/image_raw" />
+        <param name="image_is_rectified" value="True"/>
+        <param name="marker_size"        value="$(arg markerSize_2)"/>
+        <param name="marker_id"          value="$(arg markerId_2)"/>
+        <param name="reference_frame"    value="$(arg ref_frame)"/>   <!-- frame in which the marker pose will be refered -->
+        <param name="camera_frame"       value="camera1"/>
+        <param name="marker_frame"       value="$(arg marker_frame_2)" />
+        <param name="corner_refinement"  value="$(arg corner_refinement)" />
+        <param name="cam_param_path" value="$(arg cam_param_path)"/>
+        <param name="Dictionary_type" value="$(arg Dictionary_type_2)"/>
+    </node>
+
+    <node pkg="aruco_ros" type="single" name="cam2_detector3">
+        <remap from="/camera_info" to="/camera_wide_angle/camera_info" />
+        <remap from="/image" to="/camera_wide_angle/image_raw" />
+        <param name="image_is_rectified" value="True"/>
+        <param name="marker_size"        value="$(arg markerSize_3)"/>
+        <param name="marker_id"          value="$(arg markerId_3)"/>
+        <param name="reference_frame"    value="$(arg ref_frame)"/>   <!-- frame in which the marker pose will be refered -->
+        <param name="camera_frame"       value="camera1"/>
+        <param name="marker_frame"       value="$(arg marker_frame_3)" />
+        <param name="corner_refinement"  value="$(arg corner_refinement)" />
+        <param name="cam_param_path" value="$(arg cam_param_path)"/>
+        <param name="Dictionary_type" value="$(arg Dictionary_type_3)"/>
+    </node>
+
+</launch>
+

@@ -1,0 +1,15 @@
+<launch>
+  <node name="pad_auto_controller" pkg="pad_auto_controller"  type="pad_auto_controller" output="screen"/>
+    <param name="linear_vel" value="5"/>
+    <param name="angluar_vel" value="0"/>
+
+    <param name="linear_noise" value="0.1"/>
+    <param name="angular_noise" value="0.1"/>
+    <param name="hz" value="30"/>
+
+    <param name="time_for_desired_velocity" value="5"/>
+    
+
+          
+
+</launch>

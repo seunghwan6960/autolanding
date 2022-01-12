@@ -407,9 +407,12 @@ public:
     T_d=make_TF(d);
     
     T_c_i=inverse_TF(T_c);
-    //T_x=T_d*T_c_i*T_m;
-    T_x=T_c_i*T_m;
+    T_x=T_d*T_c_i*T_m;
+    //T_x=T_c_i*T_m;
     x=TF_to_vec(T_x);
+    x(0)=x(0)-drone_pose[0];
+    x(1)=x(1)-drone_pose[1];
+    x(2)=x(2)-drone_pose[2];
 
 
     return x;

@@ -51,8 +51,10 @@ include_directories(
 
 
 add_executable(RL_env_topic_publisher src/RL_env_topic_publisher.cpp)
-
 target_link_libraries(RL_env_topic_publisher ${catkin_LIBRARIES})
+
+add_executable(RL_gt_topic_publisher src/RL_gt_publisher.cpp)
+target_link_libraries(RL_gt_topic_publisher ${catkin_LIBRARIES})
 
 
 ## Declare a C++ library

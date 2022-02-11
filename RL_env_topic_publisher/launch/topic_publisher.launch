@@ -1,0 +1,9 @@
+<launch>
+  <node name="measurement_topic" pkg="RL_env_topic_publisher"  type="RL_env_topic_publisher" output="screen">
+      <param name="topic_hz" value="17"/>
+  </node>
+
+  <node name="groundTruth_topic" pkg="RL_env_topic_publisher"  type="RL_gt_topic_publisher" output="screen"/>
+  
+
+</launch>

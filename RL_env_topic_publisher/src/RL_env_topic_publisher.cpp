@@ -8,6 +8,10 @@
 #include <ros/console.h>
 #include <tf/tf.h>
 
+#include <mutex>
+#include <map>
+#include <numeric>
+
 #include <fstream>
 #include <vector>
 #include <string>
@@ -34,13 +38,6 @@ private:
 
 ros::NodeHandle nh;
 
-ros::Subscriber sub_cam1_m1_check;
-ros::Subscriber sub_cam1_m2_check;
-ros::Subscriber sub_cam1_m3_check;
-ros::Subscriber sub_cam2_m1_check;
-ros::Subscriber sub_cam2_m2_check;
-ros::Subscriber sub_cam2_m3_check;
-
 ros::Subscriber sub_cam1_m1_pose;
 ros::Subscriber sub_cam1_m2_pose;
 ros::Subscriber sub_cam1_m3_pose;
@@ -55,7 +52,6 @@ ros::Subscriber sub_cam2_m1_pixel;
 ros::Subscriber sub_cam2_m2_pixel;
 ros::Subscriber sub_cam2_m3_pixel;
 
- ros::Subscriber drone_pose_sub;
 
 
 ros::Publisher pub_pixel_array_cam1;
@@ -69,32 +65,40 @@ std_msgs::Float64MultiArray cam2_pixel_list;
 std_msgs::Float64MultiArray cam1_pose_list;
 std_msgs::Float64MultiArray cam2_pose_list;
 
+
 std::vector <double> cam1_pixels;
 std::vector <double> cam2_pixels;
 std::vector <double> cam1_poses;
 std::vector <double> cam2_poses;
 
+std::mutex pose_marker_lock;
 
-bool check_drone_pose_recive;
-double drone_pose[6];
+double marker_topic_hz;
+
+
 
 public:
-  topic_publisher(): nh("~"){
-    sub_cam1_m1_check=nh.subscribe("/cam1_detector1/check_detection",1,&topic_publisher::c1_m1_check_callback,this);
-    sub_cam1_m2_check=nh.subscribe("/cam1_detector2/check_detection",1,&topic_publisher::c1_m2_check_callback,this);
-    sub_cam1_m3_check=nh.subscribe("/cam1_detector3/check_detection",1,&topic_publisher::c1_m3_check_callback,this);
-    sub_cam2_m1_check=nh.subscribe("/cam2_detector1/check_detection",1,&topic_publisher::c2_m1_check_callback,this);
-    sub_cam2_m2_check=nh.subscribe("/cam2_detector2/check_detection",1,&topic_publisher::c2_m2_check_callback,this);
-    sub_cam2_m3_check=nh.subscribe("/cam2_detector3/check_detection",1,&topic_publisher::c2_m3_check_callback,this);  
-
-    drone_pose_sub=nh.subscribe("/mavros/local_position/pose",1, &topic_publisher::drone_pose_callback,this);  
-
+  topic_publisher(): nh("~"){  
+   
+    sub_cam1_m1_pose=nh.subscribe("/cam1_detector1/pose",1, &topic_publisher::c1_m1_pose_callback,this);
+    sub_cam1_m1_pixel=nh.subscribe("/cam1_detector1/pixel_list",1, &topic_publisher::c1_m1_pixel_callback,this);
+    sub_cam1_m2_pose=nh.subscribe("/cam1_detector2/pose",1, &topic_publisher::c1_m2_pose_callback,this);
+    sub_cam1_m2_pixel=nh.subscribe("/cam1_detector2/pixel_list",1, &topic_publisher::c1_m2_pixel_callback,this);
+    sub_cam1_m3_pose=nh.subscribe("/cam1_detector3/pose",1, &topic_publisher::c1_m3_pose_callback,this);
+    sub_cam1_m3_pixel=nh.subscribe("/cam1_detector3/pixel_list",1, &topic_publisher::c1_m3_pixel_callback,this);
+    sub_cam2_m1_pose=nh.subscribe("/cam2_detector1/pose",1, &topic_publisher::c2_m1_pose_callback,this);
+    sub_cam2_m1_pixel=nh.subscribe("/cam2_detector1/pixel_list",1, &topic_publisher::c2_m1_pixel_callback,this);
+    sub_cam2_m2_pose=nh.subscribe("/cam2_detector2/pose",1, &topic_publisher::c2_m2_pose_callback,this);
+    sub_cam2_m2_pixel=nh.subscribe("/cam2_detector2/pixel_list",1, &topic_publisher::c2_m2_pixel_callback,this);
+    sub_cam2_m3_pose=nh.subscribe("/cam2_detector3/pose",1, &topic_publisher::c2_m3_pose_callback,this);
+    sub_cam2_m3_pixel=nh.subscribe("/cam2_detector3/pixel_list",1, &topic_publisher::c2_m3_pixel_callback,this);
     
     pub_pixel_array_cam1= nh.advertise<std_msgs::Float64MultiArray>("long_focal_pixel_list", 10);
     pub_pixel_array_cam2= nh.advertise<std_msgs::Float64MultiArray>("wide_focal_pixel_list", 10);
     pub_pose_array_cam1 = nh.advertise<std_msgs::Float64MultiArray>("long_focal_pose_list", 10);
     pub_pose_array_cam2 = nh.advertise<std_msgs::Float64MultiArray>("wide_focal_pose_list", 10);
 
+    nh.param<double>("topic_hz", marker_topic_hz, 100);
 
     cam1_pixel_list.layout.dim.push_back(std_msgs::MultiArrayDimension());
     cam1_pixel_list.layout.dim[0].label="cam1_pixel-list";
@@ -111,7 +115,6 @@ public:
     cam1_pose_list.layout.dim[0].size=9;
     cam1_pose_list.layout.dim[0].stride=9;
 
-
     cam2_pose_list.layout.dim.push_back(std_msgs::MultiArrayDimension());
     cam2_pose_list.layout.dim[0].label="cam2_pose-list";
     cam2_pose_list.layout.dim[0].size=9;
@@ -121,183 +124,91 @@ public:
     cam2_pixels={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
     cam1_poses={0,0,0,0,0,0,0,0,0};
     cam2_poses={0,0,0,0,0,0,0,0,0};
-    
-  }
 
-  void drone_pose_callback(const geometry_msgs::PoseStamped &msg){
-
-    
-
-    tf::Quaternion quat_tf;
-    tf::quaternionMsgToTF(msg.pose.orientation,quat_tf);
-    tf::Matrix3x3 m(quat_tf);
-    double roll, pitch, yaw;
-    m.getEulerYPR(yaw, pitch, roll);
-
-    drone_pose[0]=msg.pose.position.x;
-    drone_pose[1]=msg.pose.position.y;
-    drone_pose[2]=msg.pose.position.z;
-    drone_pose[3]=angle_manipulation(roll);
-    drone_pose[4]=angle_manipulation(pitch);
-    drone_pose[5]=angle_manipulation(yaw);
-
-    
-  }
-
-  void c1_m1_check_callback(const std_msgs::Bool& check){
-    if(check.data){
-      sub_cam1_m1_pose=nh.subscribe("/cam1_detector1/pose",1, &topic_publisher::c1_m1_pose_callback,this);
-      sub_cam1_m1_pixel=nh.subscribe("/cam1_detector1/pixel_list",1, &topic_publisher::c1_m1_pixel_callback,this);
-    }
-    else{
-      for(int i=0;i<8;i++){
-        cam1_pixels[i]=0;
-      }
+    ros::Rate loop_rate(marker_topic_hz);
+    while(ros::ok()){
+      ros::spinOnce();
       
-      for(int i=0;i<3;i++){
-        cam1_poses[i]=0;
-      }
+      cam1_pixel_list.data=cam1_pixels;
+      pub_pixel_array_cam1.publish(cam1_pixel_list);
+      cam2_pixel_list.data=cam2_pixels;
+      pub_pixel_array_cam2.publish(cam2_pixel_list);
+      cam1_pose_list.data=cam1_poses;
+      pub_pose_array_cam1.publish(cam1_pose_list); 
+      cam2_pose_list.data=cam2_poses;
+      pub_pose_array_cam2.publish(cam2_pose_list); 
+
+      cam1_pixels={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+      cam2_pixels={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+      cam1_poses={0,0,0,0,0,0,0,0,0};
+      cam2_poses={0,0,0,0,0,0,0,0,0};
+      loop_rate.sleep();
     }
-    cam1_pixel_list.data=cam1_pixels;
-    cam2_pixel_list.data=cam2_pixels;
-    cam1_pose_list.data=cam1_poses;
-    cam2_pose_list.data=cam2_poses;
-
-
-    pub_pixel_array_cam1.publish(cam1_pixel_list);
-    pub_pixel_array_cam2.publish(cam2_pixel_list);
-    pub_pose_array_cam1.publish(cam1_pose_list); 
-    pub_pose_array_cam2.publish(cam2_pose_list);  
 
 
     
-
-
+    
   }
 
-  void c1_m2_check_callback(const std_msgs::Bool& check){
-    if(check.data){
-      sub_cam1_m2_pose=nh.subscribe("/cam1_detector2/pose",1, &topic_publisher::c1_m2_pose_callback,this);
-      sub_cam1_m2_pixel=nh.subscribe("/cam1_detector2/pixel_list",1, &topic_publisher::c1_m2_pixel_callback,this);
-    }
-    else{
-      for(int i=0;i<8;i++){
-        cam1_pixels[8+i]=0;
-      }
-      
-      for(int i=0;i<3;i++){
-        cam1_poses[3+i]=0;
-      }
-    }
-  }
-
-   void c1_m3_check_callback(const std_msgs::Bool& check){
-    if(check.data){
-      sub_cam1_m3_pose=nh.subscribe("/cam1_detector3/pose",1, &topic_publisher::c1_m3_pose_callback,this);
-      sub_cam1_m3_pixel=nh.subscribe("/cam1_detector3/pixel_list",1, &topic_publisher::c1_m3_pixel_callback,this);
-    }
-    else{
-      for(int i=0;i<8;i++){
-        cam1_pixels[2*8+i]=0;
-      }
-      
-      for(int i=0;i<3;i++){
-        cam1_poses[2*3+i]=0;
-      }
-    }
-  }
-
-  void c2_m1_check_callback(const std_msgs::Bool& check){
-    if(check.data){
-      sub_cam2_m1_pose=nh.subscribe("/cam2_detector1/pose",1, &topic_publisher::c2_m1_pose_callback,this);
-      sub_cam2_m1_pixel=nh.subscribe("/cam2_detector1/pixel_list",1, &topic_publisher::c2_m1_pixel_callback,this);
-    }
-    else{
-      for(int i=0;i<8;i++){
-        cam2_pixels[i]=0;
-      }
-      
-      for(int i=0;i<3;i++){
-        cam2_poses[i]=0;
-      }
-    }
-  }
-
-  void c2_m2_check_callback(const std_msgs::Bool& check){
-    if(check.data){
-      sub_cam2_m2_pose=nh.subscribe("/cam2_detector2/pose",1, &topic_publisher::c2_m2_pose_callback,this);
-      sub_cam2_m2_pixel=nh.subscribe("/cam2_detector2/pixel_list",1, &topic_publisher::c2_m2_pixel_callback,this);
-    }
-    else{
-      for(int i=0;i<8;i++){
-        cam2_pixels[8+i]=0;
-      }
-      
-      for(int i=0;i<3;i++){
-        cam2_poses[3+i]=0;
-      }
-    }
-  }
-
-   void c2_m3_check_callback(const std_msgs::Bool& check){
-    if(check.data){
-      sub_cam2_m3_pose=nh.subscribe("/cam2_detector3/pose",1, &topic_publisher::c2_m3_pose_callback,this);
-      sub_cam2_m3_pixel=nh.subscribe("/cam2_detector3/pixel_list",1, &topic_publisher::c2_m3_pixel_callback,this);
-    }
-    else{
-      for(int i=0;i<8;i++){
-        cam2_pixels[2*8+i]=0;
-      }
-      
-      for(int i=0;i<3;i++){
-        cam2_poses[2*3+i]=0;
-      }
-    }
-  }
 
   void c1_m1_pixel_callback(const std_msgs::Float64MultiArray msg){
+    pose_marker_lock.lock();
     for (int i=0;i<8;i++){
       cam1_pixels[i]=msg.data[i];
     }
+    pose_marker_lock.unlock();
   }
 
   void c1_m2_pixel_callback(const std_msgs::Float64MultiArray msg){
+    pose_marker_lock.lock();
     for (int i=0;i<8;i++){
       cam1_pixels[8+i]=msg.data[i];
     }
+    pose_marker_lock.unlock();
   }
 
   void c1_m3_pixel_callback(const std_msgs::Float64MultiArray msg){
+    pose_marker_lock.lock();
     for (int i=0;i<8;i++){
       cam1_pixels[2*8+i]=msg.data[i];
     }
+    pose_marker_lock.unlock();
   }
 
    void c2_m1_pixel_callback(const std_msgs::Float64MultiArray msg){
+     pose_marker_lock.lock();
     for (int i=0;i<8;i++){
       cam2_pixels[i]=msg.data[i];
     }
+    pose_marker_lock.unlock();
+  
   }
 
   void c2_m2_pixel_callback(const std_msgs::Float64MultiArray msg){
+    pose_marker_lock.lock();
     for (int i=0;i<8;i++){
       cam2_pixels[8+i]=msg.data[i];
     }
+    pose_marker_lock.unlock();
+  
   }
 
   void c2_m3_pixel_callback(const std_msgs::Float64MultiArray msg){
+    pose_marker_lock.lock();
     for (int i=0;i<8;i++){
       cam2_pixels[2*8+i]=msg.data[i];
     }
+    pose_marker_lock.unlock();
   }
 
   void c1_m1_pose_callback(const geometry_msgs::PoseStamped &msg){
+    pose_marker_lock.lock();
     tf::Quaternion quat_tf;
     tf::quaternionMsgToTF(msg.pose.orientation,quat_tf);
     tf::Matrix3x3 m(quat_tf);
     double roll, pitch, yaw;
     m.getEulerYPR(yaw, pitch, roll);
-
+    //std::cout<<"afd"<<std::endl;
     Vector6d x_c, x_g;
     x_c<<msg.pose.position.x,msg.pose.position.y,msg.pose.position.z,roll,pitch,yaw;
     x_g=inv_fn_hx(x_c,Extrinsic);
@@ -305,9 +216,11 @@ public:
     for(int i=0;i<3;i++){
         cam1_poses[i]=x_g(i);
     }
+    pose_marker_lock.unlock();
   }
 
   void c1_m2_pose_callback(const geometry_msgs::PoseStamped &msg){
+    pose_marker_lock.lock();
     tf::Quaternion quat_tf;
     tf::quaternionMsgToTF(msg.pose.orientation,quat_tf);
     tf::Matrix3x3 m(quat_tf);
@@ -321,9 +234,11 @@ public:
     for(int i=0;i<3;i++){
         cam1_poses[3+i]=x_g(i);
     }
+    pose_marker_lock.unlock();
   }
 
   void c1_m3_pose_callback(const geometry_msgs::PoseStamped &msg){
+    pose_marker_lock.lock();
     tf::Quaternion quat_tf;
     tf::quaternionMsgToTF(msg.pose.orientation,quat_tf);
     tf::Matrix3x3 m(quat_tf);
@@ -337,9 +252,11 @@ public:
     for(int i=0;i<3;i++){
         cam1_poses[2*3+i]=x_g(i);
     }
+    pose_marker_lock.unlock();
   }
 
    void c2_m1_pose_callback(const geometry_msgs::PoseStamped &msg){
+     pose_marker_lock.lock();
     tf::Quaternion quat_tf;
     tf::quaternionMsgToTF(msg.pose.orientation,quat_tf);
     tf::Matrix3x3 m(quat_tf);
@@ -353,9 +270,11 @@ public:
     for(int i=0;i<3;i++){
         cam2_poses[i]=x_g(i);
     }
+    pose_marker_lock.unlock();
   }
 
   void c2_m2_pose_callback(const geometry_msgs::PoseStamped &msg){
+    pose_marker_lock.lock();
     tf::Quaternion quat_tf;
     tf::quaternionMsgToTF(msg.pose.orientation,quat_tf);
     tf::Matrix3x3 m(quat_tf);
@@ -369,9 +288,11 @@ public:
     for(int i=0;i<3;i++){
         cam2_poses[3+i]=x_g(i);
     }
+    pose_marker_lock.unlock();
   }
 
   void c2_m3_pose_callback(const geometry_msgs::PoseStamped &msg){
+    pose_marker_lock.lock();
     tf::Quaternion quat_tf;
     tf::quaternionMsgToTF(msg.pose.orientation,quat_tf);
     tf::Matrix3x3 m(quat_tf);
@@ -385,6 +306,7 @@ public:
     for(int i=0;i<3;i++){
         cam2_poses[2*3+i]=x_g(i);
     }
+    pose_marker_lock.unlock();
   }
   
 
@@ -392,10 +314,10 @@ public:
     Vector6d x;
     Eigen::Matrix<double,6, 12> hh;
     
-    Matrix4d T_m, T_c, T_d, T_x, T_c_i;
+    Matrix4d T_m, T_c, T_x, T_c_i;
     
-    Vector6d d;
-    d<<drone_pose[0], drone_pose[1],drone_pose[2],drone_pose[3],drone_pose[4],drone_pose[5];
+    //Vector6d d;
+    //d<<drone_pose[0], drone_pose[1],drone_pose[2],drone_pose[3],drone_pose[4],drone_pose[5];
     
 
     T_c<<Extrinsic[0],Extrinsic[1],Extrinsic[2],Extrinsic[3]
@@ -404,15 +326,15 @@ public:
       ,Extrinsic[12],Extrinsic[13],Extrinsic[14],Extrinsic[15];
 
     T_m=make_TF(m);
-    T_d=make_TF(d);
+    //T_d=make_TF(d);
     
     T_c_i=inverse_TF(T_c);
-    T_x=T_d*T_c_i*T_m;
-    //T_x=T_c_i*T_m;
+    //T_x=T_d*T_c_i*T_m;
+    T_x=T_c_i*T_m;
     x=TF_to_vec(T_x);
-    x(0)=x(0)-drone_pose[0];
-    x(1)=x(1)-drone_pose[1];
-    x(2)=x(2)-drone_pose[2];
+    //x(0)=x(0)-drone_pose[0];
+    //x(1)=x(1)-drone_pose[1];
+    //x(2)=x(2)-drone_pose[2];
 
 
     return x;
@@ -495,10 +417,6 @@ int main(int argc, char** argv)
 ros::init(argc, argv, "RL_topic_pub");
 
 topic_publisher TP;
- 
-  ros::spin();
-  
-
  
   
   return 0;
